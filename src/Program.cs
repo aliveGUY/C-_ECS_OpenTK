@@ -13,6 +13,7 @@ public class Program
   private static List<uint> _indices = new();
   private static Matrix4 _model, _view, _projection;
   private static float _rotationAngle = 0.0f;
+  private static float _fov = MathHelper.PiOver4; // Initial field of view
 
   public static void Main(string[] args)
   {
@@ -29,6 +30,7 @@ public class Program
     _window.RenderFrame += OnRenderFrame;
     _window.UpdateFrame += OnUpdateFrame;
     _window.Resize += OnResize;
+    _window.MouseWheel += OnMouseWheel; // Add mouse scroll event
     _window.Run();
   }
 
@@ -63,7 +65,7 @@ public class Program
 
     // Set up matrices
     _view = Matrix4.LookAt(new Vector3(4.0f, 4.0f, 4.0f), Vector3.Zero, Vector3.UnitY);
-    _projection = Matrix4.CreatePerspectiveFieldOfView(MathHelper.PiOver4, 800f / 600f, 0.1f, 100f);
+    _projection = Matrix4.CreatePerspectiveFieldOfView(_fov, 800f / 600f, 0.1f, 100f);
     GL.UniformMatrix4(GL.GetUniformLocation(_shaderProgram, "view"), false, ref _view);
     GL.UniformMatrix4(GL.GetUniformLocation(_shaderProgram, "projection"), false, ref _projection);
   }
@@ -78,13 +80,19 @@ public class Program
       for (int i = 0; i < mesh.Vertices.Count; i++)
       {
         var vertex = mesh.Vertices[i];
-        _vertices.Add(vertex.X);
-        _vertices.Add(vertex.Y);
-        _vertices.Add(vertex.Z);
+
+        // Adjust vertex orientation
+        float correctedX = vertex.X;
+        float correctedY = vertex.Z; // Swap Y and Z for 90° X rotation
+        float correctedZ = -vertex.Y; // Negate Y for 180° Y rotation
+
+        _vertices.Add(correctedX);
+        _vertices.Add(correctedY);
+        _vertices.Add(correctedZ);
 
         var uv = mesh.TextureCoordinateChannels[0][i];
         _vertices.Add(uv.X);
-        _vertices.Add(uv.Y);
+        _vertices.Add(1.0f - uv.Y); // Flip the Y-coordinate of the texture to correct orientation
       }
 
       foreach (var face in mesh.Faces)
@@ -115,13 +123,23 @@ public class Program
 
   private static void OnUpdateFrame(FrameEventArgs e)
   {
-    _rotationAngle += 0.005f;
+    _rotationAngle += 0.0005f;
   }
 
   private static void OnResize(ResizeEventArgs e)
   {
     GL.Viewport(0, 0, e.Width, e.Height);
-    _projection = Matrix4.CreatePerspectiveFieldOfView(MathHelper.PiOver4, e.Width / (float)e.Height, 0.1f, 100f);
+    _projection = Matrix4.CreatePerspectiveFieldOfView(_fov, e.Width / (float)e.Height, 0.1f, 100f);
+    GL.UniformMatrix4(GL.GetUniformLocation(_shaderProgram, "projection"), false, ref _projection);
+  }
+
+  private static void OnMouseWheel(MouseWheelEventArgs e)
+  {
+    // Adjust field of view based on scroll direction
+    _fov -= e.OffsetY * 0.1f; // Zoom sensitivity
+    _fov = MathHelper.Clamp(_fov, 0.1f, MathHelper.PiOver2); // Clamp FOV between 0.1 and 90 degrees
+
+    _projection = Matrix4.CreatePerspectiveFieldOfView(_fov, 800f / 600f, 0.1f, 100f);
     GL.UniformMatrix4(GL.GetUniformLocation(_shaderProgram, "projection"), false, ref _projection);
   }
 
@@ -146,7 +164,6 @@ public class Program
     GL.BindTexture(TextureTarget.Texture2D, 0);
     return texture;
   }
-
 
   private static int CreateShaderProgram()
   {
